@@ -1,179 +1,166 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Cheat Database — Auto Loader</title>
-  <style>
-    :root{--bg:#0f172a;--card:#0b1220;--accent:#4ade80;--muted:#94a3b8}
-    body{font-family:Inter,Segoe UI,system-ui,Arial;margin:0;background:linear-gradient(180deg,#07102a 0%,#081428 100%);color:#e6eef8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px}
-    .card{width:100%;max-width:920px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);border-radius:12px;padding:20px;box-shadow:0 10px 30px rgba(2,6,23,0.6)}
-    h1{margin:0 0 8px;font-size:20px}
-    p.lead{margin:0 0 18px;color:var(--muted)}
-    .progress-wrap{background:rgba(255,255,255,0.04);border-radius:8px;padding:12px}
-    .bar{height:18px;background:rgba(255,255,255,0.06);border-radius:8px;overflow:hidden;position:relative}
-    .bar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#60a5fa);transition:width 120ms linear}
-    .bar-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#032b11}
-    .info{margin-top:12px;display:flex;gap:12px;flex-wrap:wrap}
-    .chip{background:rgba(255,255,255,0.03);padding:8px 12px;border-radius:999px;font-size:13px;color:var(--muted)}
-    .result{margin-top:18px;max-height:420px;overflow:auto;background:rgba(0,0,0,0.35);padding:12px;border-radius:8px;font-family:monospace;font-size:13px}
-    .btn{display:inline-block;padding:8px 12px;border-radius:8px;background:#0ea5e9;color:#021124;text-decoration:none;font-weight:600;margin-left:8px}
-    .small{font-size:13px;color:var(--muted)}
-    .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.08);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;vertical-align:middle;margin-right:8px}
-    @keyframes spin{to{transform:rotate(360deg)}}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>CheatDatabase — Auto Index from TXT</title>
+<style>
+  :root{--bg:#071028;--card:#0b1220;--muted:#94a3b8;--accent:#60a5fa}
+  body{font-family:Inter,system-ui,Segoe UI,Arial;color:#e6eef8;background:linear-gradient(180deg,#031027 0%,#07183a 100%);margin:0;padding:28px;display:flex;justify-content:center}
+  .wrap{width:100%;max-width:1100px}
+  .card{background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);padding:18px;border-radius:12px;box-shadow:0 8px 28px rgba(2,6,23,0.6)}
+  h1{margin:0 0 8px;font-size:20px}
+  .controls{display:flex;gap:8px;align-items:center;margin:12px 0}
+  .btn{background:var(--accent);color:#011226;padding:8px 12px;border-radius:8px;text-decoration:none;font-weight:600}
+  .small{color:var(--muted);font-size:13px}
+  .progress{height:14px;background:rgba(255,255,255,0.03);border-radius:8px;overflow:hidden}
+  .fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#4ade80);transition:width 120ms linear}
+  .grid{display:grid;grid-template-columns:1fr 360px;gap:12px;margin-top:12px}
+  .left{min-height:420px;background:rgba(0,0,0,0.35);padding:12px;border-radius:8px;overflow:auto}
+  .right{min-height:420px;background:rgba(0,0,0,0.22);padding:12px;border-radius:8px;overflow:auto}
+  input[type=search]{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:inherit}
+  .game{padding:8px;border-bottom:1px solid rgba(255,255,255,0.02)}
+  .game h3{margin:0;font-size:14px}
+  pre{white-space:pre-wrap;font-family:monospace;font-size:13px}
+</style>
 </head>
 <body>
-  <div class="card">
-    <h1>Cheat Database — Auto JSON Loader</h1>
-    <p class="lead">This page automatically fetches <code>CheatDatabase.json</code>, shows a loading percentage while downloading, and displays a message when loading completes. Place the JSON file in the same folder as this HTML (or update the <code>jsonUrl</code> variable in the script).</p>
+  <div class="wrap card">
+    <h1>Auto Index — parse <code>CheatDatabase.txt</code> in browser</h1>
+    <p class="small">This single HTML fetches <code>CheatDatabase.txt</code> (place it in the same folder), parses it into an index of games & cheats, shows progress while downloading, and lets you search, view and export JSON.</p>
 
-    <div class="progress-wrap">
-      <div class="bar" aria-hidden="true">
-        <div id="barFill" class="bar-fill"></div>
-        <div id="barText" class="bar-text">Waiting to start…</div>
+    <div class="controls">
+      <div style="flex:1">
+        <div class="progress" aria-hidden="true"><div id="fill" class="fill"></div></div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px"><span id="status" class="small">Idle</span><span id="size" class="small">0 bytes</span></div>
       </div>
-      <div class="info">
-        <div class="chip" id="statusChip"><span class="spinner" id="spinner" style="display:none"></span><span id="statusText">Idle</span></div>
-        <div class="chip small" id="sizeInfo">0 bytes</div>
-        <a id="retryBtn" class="btn" href="#" style="display:none">Retry</a>
+      <input id="search" type="search" placeholder="Search game title or cheat name..." />
+      <a id="exportBtn" class="btn" href="#">Export JSON</a>
+    </div>
+
+    <div class="grid">
+      <div class="left" id="list">
+        <p class="small">No data loaded yet.</p>
+      </div>
+      <div class="right">
+        <div class="small">Preview / Selected Game</div>
+        <div id="preview" style="margin-top:8px"><em class="small">Select a game to see its cheats.</em></div>
       </div>
     </div>
 
-    <div class="result" id="resultArea">No data loaded yet.</div>
   </div>
 
-  <script>
-    // ---- Configuration ----
-    // If you host the JSON next to this HTML, keep as 'CheatDatabase.json'
-    // Otherwise provide an absolute/relative URL to your JSON file.
-    const jsonUrl = 'CheatDatabase.json';
+<script>
+// Config
+const txtUrl = 'CheatDatabase.txt';
+const fill = document.getElementById('fill');
+const status = document.getElementById('status');
+const sizeInfo = document.getElementById('size');
+const listEl = document.getElementById('list');
+const preview = document.getElementById('preview');
+const searchInput = document.getElementById('search');
+const exportBtn = document.getElementById('exportBtn');
 
-    // ---- UI elements ----
-    const barFill = document.getElementById('barFill');
-    const barText = document.getElementById('barText');
-    const statusText = document.getElementById('statusText');
-    const spinner = document.getElementById('spinner');
-    const sizeInfo = document.getElementById('sizeInfo');
-    const resultArea = document.getElementById('resultArea');
-    const retryBtn = document.getElementById('retryBtn');
+function humanBytes(n){ if(!n) return '0 bytes'; const u=['bytes','KB','MB','GB']; let i=0; let val=n; while(val>=1024 && i<u.length-1){val/=1024;i++} return val.toFixed(i?2:0)+' '+u[i]; }
 
-    function humanBytes(n){
-      if (!n || n === 0) return '0 bytes';
-      const units = ['bytes','KB','MB','GB'];
-      let i = 0; let value = n;
-      while(value >= 1024 && i < units.length-1){ value /= 1024; i++; }
-      return value.toFixed( (i===0?0:2) ) + ' ' + units[i];
+async function fetchWithProgress(url){
+  status.textContent='Starting';
+  fill.style.width='0%';
+  try{
+    const resp = await fetch(url);
+    if(!resp.ok) throw new Error('Network error ' + resp.status);
+    const total = resp.headers.get('Content-Length');
+    const reader = resp.body.getReader();
+    let received=0; const chunks=[];
+    while(true){ const {done,value} = await reader.read(); if(done) break; chunks.push(value); received += value.length; if(total){ const pct = Math.round((received/total)*100); fill.style.width = pct + '%'; status.textContent = pct+'%'; } else { const approx = Math.min(98, Math.round((Math.log(received+1)/10)*100)); fill.style.width = approx+'%'; status.textContent = humanBytes(received)+' downloaded'; } sizeInfo.textContent = humanBytes(received) + (total ? ' / ' + humanBytes(total) : ''); }
+    // concat
+    const full = concat(chunks);
+    const text = new TextDecoder('utf-8').decode(full);
+    fill.style.width='100%'; status.textContent='Parsing';
+    return text;
+  }catch(err){ status.textContent='Error'; preview.innerText = 'Error fetching: '+err.message; throw err; }
+}
+function concat(chunks){ let total=0; for(const c of chunks) total+=c.length; const out = new Uint8Array(total); let off=0; for(const c of chunks){ out.set(c, off); off += c.length } return out }
+
+// Parser heuristics (similar to earlier script)
+function parseCheatTxt(text){
+  const lines = text.split(/\r?\n/).map(s=>s.replace(/[\u0000]/g,'')).map(s=>s.trimRight());
+  const games = [];
+  let currentGame = null; let currentCheat = null;
+  const titleQuoted = /^"(.+)"$/;
+  const allCaps = /^[A-Z0-9 \-\'&!.,()]+$/;
+  const hexLike = /[0-9A-Fa-f]/;
+  function isCodeLine(s){ if(!s) return false; const hexcount = (s.match(/[0-9A-Fa-f]/g)||[]).length; const alphacount = (s.match(/[A-Za-z]/g)||[]).length; return hexcount > alphacount && /\d/.test(s); }
+
+  for(let i=0;i<lines.length;i++){
+    const raw = lines[i].trim(); if(!raw) continue;
+    // quoted title
+    const q = raw.match(titleQuoted);
+    if(q){ currentGame = {title:q[1], cheats:[]}; games.push(currentGame); currentCheat = null; continue; }
+    // uppercase title heuristics
+    if(!currentGame && allCaps.test(raw) && raw.length<100 && raw.split(/\s+/).length<=6){ currentGame = {title: raw.toLowerCase().replace(/\b\w/g,m=>m.toUpperCase()), cheats:[]}; games.push(currentGame); currentCheat = null; continue; }
+    // section headers
+    if(/codes$/i.test(raw) || /^enable code/i.test(raw) || /^activate cheat/i.test(raw)){
+      if(!currentGame){ currentGame = {title:'Unknown', cheats:[]}; games.push(currentGame); }
+      currentCheat = {name: raw, codes: []}; currentGame.cheats.push(currentCheat); continue;
     }
-
-    async function loadJsonWithProgress(url){
-      try{
-        statusText.textContent = 'Starting download';
-        spinner.style.display = 'inline-block';
-        retryBtn.style.display = 'none';
-
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Network response was not OK: ' + response.status);
-
-        // Try to get content length from headers
-        const contentLength = response.headers.get('Content-Length');
-        const total = contentLength ? parseInt(contentLength,10) : null;
-        if (total) sizeInfo.textContent = 'Total size: ' + humanBytes(total);
-        else sizeInfo.textContent = 'Total size: unknown';
-
-        const reader = response.body.getReader();
-        let received = 0;
-        const chunks = [];
-
-        // If content-length isn't available we still track bytes received and show "unknown" total
-        while(true){
-          const {done, value} = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          received += value.length;
-
-          // Update progress UI
-          if (total){
-            const pct = Math.min(100, Math.round((received / total) * 100));
-            barFill.style.width = pct + '%';
-            barText.textContent = pct + '%';
-            statusText.textContent = 'Downloading';
-          } else {
-            // When total unknown show an approximate progress animation and bytes
-            barFill.style.width = Math.min(98, Math.round((Math.log(received+1)/10)*100)) + '%';
-            barText.textContent = humanBytes(received) + ' downloaded';
-            statusText.textContent = 'Downloading (size unknown)';
-          }
-          sizeInfo.textContent = humanBytes(received) + (total ? ' / ' + humanBytes(total) : '');
-        }
-
-        // Concatenate chunks into string
-        const fullArray = concatenateUint8Arrays(chunks);
-        const text = new TextDecoder('utf-8').decode(fullArray);
-
-        // Finalize UI to 100%
-        barFill.style.width = '100%';
-        barText.textContent = '100%';
-        statusText.textContent = 'Parsing JSON';
-
-        // Parse JSON
-        const data = JSON.parse(text);
-
-        // Show success
-        statusText.textContent = 'Load complete ✓';
-        spinner.style.display = 'none';
-        resultArea.innerHTML = renderSummary(data);
-
-      }catch(err){
-        console.error(err);
-        statusText.textContent = 'Error';
-        spinner.style.display = 'none';
-        barText.textContent = 'Failed';
-        retryBtn.style.display = 'inline-block';
-        resultArea.textContent = 'Error loading JSON: ' + err.message + '\n(Ensure the JSON file is reachable from this page — put CheatDatabase.json in the same folder and serve via HTTP.)';
-      }
+    // if looks like cheat name (not code) and next lines contain code
+    if(!isCodeLine(raw)){
+      let lookahead=false; for(let k=1;k<=3;k++){ if(i+k < lines.length && isCodeLine(lines[i+k].trim())){ lookahead=true; break; } }
+      if(lookahead){ if(!currentGame){ currentGame={title:'Unknown', cheats:[]}; games.push(currentGame); } currentCheat = {name:raw, codes:[]}; currentGame.cheats.push(currentCheat); continue; } else { if(!currentGame){ currentGame={title:'Unknown', cheats:[]}; games.push(currentGame); } currentCheat = {name:raw, codes:[]}; currentGame.cheats.push(currentCheat); continue; }
     }
+    // code line
+    if(!currentGame){ currentGame={title:'Unknown', cheats:[]}; games.push(currentGame); }
+    if(!currentCheat){ currentCheat = {name:'Codes', codes:[]}; currentGame.cheats.push(currentCheat); }
+    currentCheat.codes.push(raw);
+  }
+  return games;
+}
 
-    function concatenateUint8Arrays(chunks){
-      // chunks are Uint8Array
-      let totalLen = 0;
-      for(const c of chunks) totalLen += c.length;
-      const result = new Uint8Array(totalLen);
-      let offset = 0;
-      for(const c of chunks){ result.set(c, offset); offset += c.length; }
-      return result;
-    }
+function renderList(games){
+  if(!games.length) return '<p class="small">No games found.</p>';
+  const frag = document.createDocumentFragment();
+  games.forEach((g, idx)=>{
+    const el = document.createElement('div'); el.className='game';
+    const h = document.createElement('h3'); h.textContent = g.title || 'Untitled'; el.appendChild(h);
+    const meta = document.createElement('div'); meta.className='small'; meta.textContent = (Array.isArray(g.cheats)?g.cheats.length:0)+' cheats'; el.appendChild(meta);
+    el.addEventListener('click', ()=>{ showPreview(g); });
+    frag.appendChild(el);
+  });
+  listEl.innerHTML=''; listEl.appendChild(frag);
+}
 
-    function renderSummary(data){
-      // data expected to be an array of games
-      if (!Array.isArray(data)) return '<pre>JSON loaded but format unexpected (expected an array of games).</pre>';
-      const gameCount = data.length;
-      const first5 = data.slice(0,5).map(g=>g.title || 'Untitled').join('\n');
-      const cheatsCount = data.reduce((acc,g)=>acc + (Array.isArray(g.cheats)?g.cheats.length:0), 0);
-      return `<div><strong>Load complete.</strong>\n<p class=\"small\">Games: ${gameCount} &nbsp; • &nbsp; Cheat sections: ${cheatsCount}</p><pre style=\"white-space:pre-wrap;margin-top:12px;\">First 5 games:\n${escapeHtml(first5)}</pre></div>`;
-    }
+function showPreview(g){
+  const html = ['<h3>'+escapeHtml(g.title)+'</h3>'];
+  if(!g.cheats || !g.cheats.length){ html.push('<div class="small">No cheats</div>'); }
+  else{ html.push('<div class="small">Cheats: '+g.cheats.length+'</div>'); g.cheats.slice(0,50).forEach(c=>{ html.push('<strong>'+escapeHtml(c.name)+'</strong>'); if(c.codes && c.codes.length){ html.push('<pre>'+escapeHtml(c.codes.join('\n'))+'</pre>'); } }); }
+  preview.innerHTML = html.join('\n');
+}
+function escapeHtml(s){ return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
-    function escapeHtml(s){ return String(s).replace(/[&<>]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c])); }
+let parsedData = null;
 
-    // Retry button
-    retryBtn.addEventListener('click', (e)=>{ e.preventDefault(); resetUI(); loadJsonWithProgress(jsonUrl); });
+async function start(){
+  try{
+    const txt = await fetchWithProgress(txtUrl);
+    parsedData = parseCheatTxt(txt);
+    status.textContent = 'Done';
+    renderList(parsedData);
+  }catch(err){ console.error(err); }
+}
 
-    function resetUI(){
-      barFill.style.width = '0%';
-      barText.textContent = 'Waiting to start…';
-      statusText.textContent = 'Idle';
-      spinner.style.display = 'none';
-      sizeInfo.textContent = '0 bytes';
-      resultArea.textContent = 'No data loaded yet.';
-      retryBtn.style.display = 'none';
-    }
+searchInput.addEventListener('input', ()=>{
+  const q = searchInput.value.trim().toLowerCase(); if(!parsedData) return; if(!q){ renderList(parsedData); return; }
+  const filtered = parsedData.filter(g=> g.title && g.title.toLowerCase().includes(q) || (g.cheats && g.cheats.some(c=> (c.name||'').toLowerCase().includes(q))));
+  renderList(filtered);
+});
 
-    // Auto-start after page load
-    window.addEventListener('load', ()=>{
-      resetUI();
-      // Small delay to let UI paint
-      setTimeout(()=>{ loadJsonWithProgress(jsonUrl); }, 120);
-    });
-  </script>
+exportBtn.addEventListener('click',(e)=>{
+  e.preventDefault(); if(!parsedData) return alert('No data to export'); const blob = new Blob([JSON.stringify(parsedData, null, 2)], {type:'application/json'}); const url = URL.createObjectURL(blob); exportBtn.href = url; exportBtn.download = 'CheatDatabase_from_txt.json'; exportBtn.click(); setTimeout(()=>URL.revokeObjectURL(url), 60000);
+});
+
+// Auto start
+window.addEventListener('load', ()=>{ start(); });
+</script>
 </body>
 </html>
