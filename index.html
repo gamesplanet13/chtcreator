@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Cheat Database — Auto Loader</title>
+  <style>
+    :root{--bg:#0f172a;--card:#0b1220;--accent:#4ade80;--muted:#94a3b8}
+    body{font-family:Inter,Segoe UI,system-ui,Arial;margin:0;background:linear-gradient(180deg,#07102a 0%,#081428 100%);color:#e6eef8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px}
+    .card{width:100%;max-width:920px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);border-radius:12px;padding:20px;box-shadow:0 10px 30px rgba(2,6,23,0.6)}
+    h1{margin:0 0 8px;font-size:20px}
+    p.lead{margin:0 0 18px;color:var(--muted)}
+    .progress-wrap{background:rgba(255,255,255,0.04);border-radius:8px;padding:12px}
+    .bar{height:18px;background:rgba(255,255,255,0.06);border-radius:8px;overflow:hidden;position:relative}
+    .bar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#60a5fa);transition:width 120ms linear}
+    .bar-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#032b11}
+    .info{margin-top:12px;display:flex;gap:12px;flex-wrap:wrap}
+    .chip{background:rgba(255,255,255,0.03);padding:8px 12px;border-radius:999px;font-size:13px;color:var(--muted)}
+    .result{margin-top:18px;max-height:420px;overflow:auto;background:rgba(0,0,0,0.35);padding:12px;border-radius:8px;font-family:monospace;font-size:13px}
+    .btn{display:inline-block;padding:8px 12px;border-radius:8px;background:#0ea5e9;color:#021124;text-decoration:none;font-weight:600;margin-left:8px}
+    .small{font-size:13px;color:var(--muted)}
+    .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.08);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;vertical-align:middle;margin-right:8px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Cheat Database — Auto JSON Loader</h1>
+    <p class="lead">This page automatically fetches <code>CheatDatabase.json</code>, shows a loading percentage while downloading, and displays a message when loading completes. Place the JSON file in the same folder as this HTML (or update the <code>jsonUrl</code> variable in the script).</p>
+
+    <div class="progress-wrap">
+      <div class="bar" aria-hidden="true">
+        <div id="barFill" class="bar-fill"></div>
+        <div id="barText" class="bar-text">Waiting to start…</div>
+      </div>
+      <div class="info">
+        <div class="chip" id="statusChip"><span class="spinner" id="spinner" style="display:none"></span><span id="statusText">Idle</span></div>
+        <div class="chip small" id="sizeInfo">0 bytes</div>
+        <a id="retryBtn" class="btn" href="#" style="display:none">Retry</a>
+      </div>
+    </div>
+
+    <div class="result" id="resultArea">No data loaded yet.</div>
+  </div>
+
+  <script>
+    // ---- Configuration ----
+    // If you host the JSON next to this HTML, keep as 'CheatDatabase.json'
+    // Otherwise provide an absolute/relative URL to your JSON file.
+    const jsonUrl = 'CheatDatabase.json';
+
+    // ---- UI elements ----
+    const barFill = document.getElementById('barFill');
+    const barText = document.getElementById('barText');
+    const statusText = document.getElementById('statusText');
+    const spinner = document.getElementById('spinner');
+    const sizeInfo = document.getElementById('sizeInfo');
+    const resultArea = document.getElementById('resultArea');
+    const retryBtn = document.getElementById('retryBtn');
+
+    function humanBytes(n){
+      if (!n || n === 0) return '0 bytes';
+      const units = ['bytes','KB','MB','GB'];
+      let i = 0; let value = n;
+      while(value >= 1024 && i < units.length-1){ value /= 1024; i++; }
+      return value.toFixed( (i===0?0:2) ) + ' ' + units[i];
+    }
+
+    async function loadJsonWithProgress(url){
+      try{
+        statusText.textContent = 'Starting download';
+        spinner.style.display = 'inline-block';
+        retryBtn.style.display = 'none';
+
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Network response was not OK: ' + response.status);
+
+        // Try to get content length from headers
+        const contentLength = response.headers.get('Content-Length');
+        const total = contentLength ? parseInt(contentLength,10) : null;
+        if (total) sizeInfo.textContent = 'Total size: ' + humanBytes(total);
+        else sizeInfo.textContent = 'Total size: unknown';
+
+        const reader = response.body.getReader();
+        let received = 0;
+        const chunks = [];
+
+        // If content-length isn't available we still track bytes received and show "unknown" total
+        while(true){
+          const {done, value} = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+
+          // Update progress UI
+          if (total){
+            const pct = Math.min(100, Math.round((received / total) * 100));
+            barFill.style.width = pct + '%';
+            barText.textContent = pct + '%';
+            statusText.textContent = 'Downloading';
+          } else {
+            // When total unknown show an approximate progress animation and bytes
+            barFill.style.width = Math.min(98, Math.round((Math.log(received+1)/10)*100)) + '%';
+            barText.textContent = humanBytes(received) + ' downloaded';
+            statusText.textContent = 'Downloading (size unknown)';
+          }
+          sizeInfo.textContent = humanBytes(received) + (total ? ' / ' + humanBytes(total) : '');
+        }
+
+        // Concatenate chunks into string
+        const fullArray = concatenateUint8Arrays(chunks);
+        const text = new TextDecoder('utf-8').decode(fullArray);
+
+        // Finalize UI to 100%
+        barFill.style.width = '100%';
+        barText.textContent = '100%';
+        statusText.textContent = 'Parsing JSON';
+
+        // Parse JSON
+        const data = JSON.parse(text);
+
+        // Show success
+        statusText.textContent = 'Load complete ✓';
+        spinner.style.display = 'none';
+        resultArea.innerHTML = renderSummary(data);
+
+      }catch(err){
+        console.error(err);
+        statusText.textContent = 'Error';
+        spinner.style.display = 'none';
+        barText.textContent = 'Failed';
+        retryBtn.style.display = 'inline-block';
+        resultArea.textContent = 'Error loading JSON: ' + err.message + '\n(Ensure the JSON file is reachable from this page — put CheatDatabase.json in the same folder and serve via HTTP.)';
+      }
+    }
+
+    function concatenateUint8Arrays(chunks){
+      // chunks are Uint8Array
+      let totalLen = 0;
+      for(const c of chunks) totalLen += c.length;
+      const result = new Uint8Array(totalLen);
+      let offset = 0;
+      for(const c of chunks){ result.set(c, offset); offset += c.length; }
+      return result;
+    }
+
+    function renderSummary(data){
+      // data expected to be an array of games
+      if (!Array.isArray(data)) return '<pre>JSON loaded but format unexpected (expected an array of games).</pre>';
+      const gameCount = data.length;
+      const first5 = data.slice(0,5).map(g=>g.title || 'Untitled').join('\n');
+      const cheatsCount = data.reduce((acc,g)=>acc + (Array.isArray(g.cheats)?g.cheats.length:0), 0);
+      return `<div><strong>Load complete.</strong>\n<p class=\"small\">Games: ${gameCount} &nbsp; • &nbsp; Cheat sections: ${cheatsCount}</p><pre style=\"white-space:pre-wrap;margin-top:12px;\">First 5 games:\n${escapeHtml(first5)}</pre></div>`;
+    }
+
+    function escapeHtml(s){ return String(s).replace(/[&<>]/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c])); }
+
+    // Retry button
+    retryBtn.addEventListener('click', (e)=>{ e.preventDefault(); resetUI(); loadJsonWithProgress(jsonUrl); });
+
+    function resetUI(){
+      barFill.style.width = '0%';
+      barText.textContent = 'Waiting to start…';
+      statusText.textContent = 'Idle';
+      spinner.style.display = 'none';
+      sizeInfo.textContent = '0 bytes';
+      resultArea.textContent = 'No data loaded yet.';
+      retryBtn.style.display = 'none';
+    }
+
+    // Auto-start after page load
+    window.addEventListener('load', ()=>{
+      resetUI();
+      // Small delay to let UI paint
+      setTimeout(()=>{ loadJsonWithProgress(jsonUrl); }, 120);
+    });
+  </script>
+</body>
+</html>
