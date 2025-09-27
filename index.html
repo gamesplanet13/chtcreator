@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>CheatDatabase — Auto Index from TXT</title>
+<title>CheatDatabase — Quick Lookup & Cheat File Export</title>
 <style>
   :root{--bg:#071028;--card:#0b1220;--muted:#94a3b8;--accent:#60a5fa}
   body{font-family:Inter,system-ui,Segoe UI,Arial;color:#e6eef8;background:linear-gradient(180deg,#031027 0%,#07183a 100%);margin:0;padding:28px;display:flex;justify-content:center}
@@ -15,36 +15,38 @@
   .small{color:var(--muted);font-size:13px}
   .progress{height:14px;background:rgba(255,255,255,0.03);border-radius:8px;overflow:hidden}
   .fill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#4ade80);transition:width 120ms linear}
-  .grid{display:grid;grid-template-columns:1fr 360px;gap:12px;margin-top:12px}
+  .grid{display:grid;grid-template-columns:1fr 420px;gap:12px;margin-top:12px}
   .left{min-height:420px;background:rgba(0,0,0,0.35);padding:12px;border-radius:8px;overflow:auto}
   .right{min-height:420px;background:rgba(0,0,0,0.22);padding:12px;border-radius:8px;overflow:auto}
-  input[type=search]{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:inherit}
-  .game{padding:8px;border-bottom:1px solid rgba(255,255,255,0.02)}
+  input[type=search], input[type=text], select{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:inherit}
+  .game{padding:8px;border-bottom:1px solid rgba(255,255,255,0.02);cursor:pointer}
   .game h3{margin:0;font-size:14px}
-  pre{white-space:pre-wrap;font-family:monospace;font-size:13px}
+  pre{white-space:pre-wrap;font-family:monospace;font-size:13px;background:rgba(0,0,0,0.25);padding:8px;border-radius:6px}
+  .actions{display:flex;gap:8px;margin-top:8px}
 </style>
 </head>
 <body>
   <div class="wrap card">
-    <h1>Auto Index — parse <code>CheatDatabase.txt</code> in browser</h1>
-    <p class="small">This single HTML fetches <code>CheatDatabase.txt</code> (place it in the same folder), parses it into an index of games & cheats, shows progress while downloading, and lets you search, view and export JSON.</p>
+    <h1>Cheat Lookup — type/paste Game ID or Title</h1>
+    <p class="small">Paste a game title or a numeric game ID (index starting at 1) to show that game's cheats. Preview will show cheats and a <strong>Download Cheat File</strong> button. "Unlock All" logic: if the game has any cheat whose name includes "unlock" or "all", those codes are offered; otherwise you can create a cheat file combining selected cheats.</p>
 
     <div class="controls">
       <div style="flex:1">
         <div class="progress" aria-hidden="true"><div id="fill" class="fill"></div></div>
         <div style="display:flex;justify-content:space-between;margin-top:6px"><span id="status" class="small">Idle</span><span id="size" class="small">0 bytes</span></div>
       </div>
-      <input id="search" type="search" placeholder="Search game title or cheat name..." />
-      <a id="exportBtn" class="btn" href="#">Export JSON</a>
+      <input id="gameInput" type="text" placeholder="Paste game title or ID here (e.g. 123 or '007 Agent Under Fire')" />
+      <button id="lookupBtn" class="btn">Lookup</button>
     </div>
 
     <div class="grid">
       <div class="left" id="list">
-        <p class="small">No data loaded yet.</p>
+        <p class="small">No data loaded yet. The page auto-parses <code>CheatDatabase.txt</code> from the same folder. Serve via HTTP and open this page.</p>
       </div>
       <div class="right">
-        <div class="small">Preview / Selected Game</div>
+        <div id="previewHeader" class="small">Preview / Selected Game</div>
         <div id="preview" style="margin-top:8px"><em class="small">Select a game to see its cheats.</em></div>
+        <div id="actionsArea" style="margin-top:12px"></div>
       </div>
     </div>
 
@@ -58,8 +60,9 @@ const status = document.getElementById('status');
 const sizeInfo = document.getElementById('size');
 const listEl = document.getElementById('list');
 const preview = document.getElementById('preview');
-const searchInput = document.getElementById('search');
-const exportBtn = document.getElementById('exportBtn');
+const gameInput = document.getElementById('gameInput');
+const lookupBtn = document.getElementById('lookupBtn');
+const actionsArea = document.getElementById('actionsArea');
 
 function humanBytes(n){ if(!n) return '0 bytes'; const u=['bytes','KB','MB','GB']; let i=0; let val=n; while(val>=1024 && i<u.length-1){val/=1024;i++} return val.toFixed(i?2:0)+' '+u[i]; }
 
@@ -73,7 +76,6 @@ async function fetchWithProgress(url){
     const reader = resp.body.getReader();
     let received=0; const chunks=[];
     while(true){ const {done,value} = await reader.read(); if(done) break; chunks.push(value); received += value.length; if(total){ const pct = Math.round((received/total)*100); fill.style.width = pct + '%'; status.textContent = pct+'%'; } else { const approx = Math.min(98, Math.round((Math.log(received+1)/10)*100)); fill.style.width = approx+'%'; status.textContent = humanBytes(received)+' downloaded'; } sizeInfo.textContent = humanBytes(received) + (total ? ' / ' + humanBytes(total) : ''); }
-    // concat
     const full = concat(chunks);
     const text = new TextDecoder('utf-8').decode(full);
     fill.style.width='100%'; status.textContent='Parsing';
@@ -82,34 +84,28 @@ async function fetchWithProgress(url){
 }
 function concat(chunks){ let total=0; for(const c of chunks) total+=c.length; const out = new Uint8Array(total); let off=0; for(const c of chunks){ out.set(c, off); off += c.length } return out }
 
-// Parser heuristics (similar to earlier script)
+// Parser
 function parseCheatTxt(text){
   const lines = text.split(/\r?\n/).map(s=>s.replace(/[\u0000]/g,'')).map(s=>s.trimRight());
   const games = [];
   let currentGame = null; let currentCheat = null;
   const titleQuoted = /^"(.+)"$/;
   const allCaps = /^[A-Z0-9 \-\'&!.,()]+$/;
-  const hexLike = /[0-9A-Fa-f]/;
   function isCodeLine(s){ if(!s) return false; const hexcount = (s.match(/[0-9A-Fa-f]/g)||[]).length; const alphacount = (s.match(/[A-Za-z]/g)||[]).length; return hexcount > alphacount && /\d/.test(s); }
 
   for(let i=0;i<lines.length;i++){
     const raw = lines[i].trim(); if(!raw) continue;
-    // quoted title
     const q = raw.match(titleQuoted);
     if(q){ currentGame = {title:q[1], cheats:[]}; games.push(currentGame); currentCheat = null; continue; }
-    // uppercase title heuristics
     if(!currentGame && allCaps.test(raw) && raw.length<100 && raw.split(/\s+/).length<=6){ currentGame = {title: raw.toLowerCase().replace(/\b\w/g,m=>m.toUpperCase()), cheats:[]}; games.push(currentGame); currentCheat = null; continue; }
-    // section headers
     if(/codes$/i.test(raw) || /^enable code/i.test(raw) || /^activate cheat/i.test(raw)){
       if(!currentGame){ currentGame = {title:'Unknown', cheats:[]}; games.push(currentGame); }
       currentCheat = {name: raw, codes: []}; currentGame.cheats.push(currentCheat); continue;
     }
-    // if looks like cheat name (not code) and next lines contain code
     if(!isCodeLine(raw)){
       let lookahead=false; for(let k=1;k<=3;k++){ if(i+k < lines.length && isCodeLine(lines[i+k].trim())){ lookahead=true; break; } }
       if(lookahead){ if(!currentGame){ currentGame={title:'Unknown', cheats:[]}; games.push(currentGame); } currentCheat = {name:raw, codes:[]}; currentGame.cheats.push(currentCheat); continue; } else { if(!currentGame){ currentGame={title:'Unknown', cheats:[]}; games.push(currentGame); } currentCheat = {name:raw, codes:[]}; currentGame.cheats.push(currentCheat); continue; }
     }
-    // code line
     if(!currentGame){ currentGame={title:'Unknown', cheats:[]}; games.push(currentGame); }
     if(!currentCheat){ currentCheat = {name:'Codes', codes:[]}; currentGame.cheats.push(currentCheat); }
     currentCheat.codes.push(raw);
@@ -118,48 +114,119 @@ function parseCheatTxt(text){
 }
 
 function renderList(games){
-  if(!games.length) return '<p class="small">No games found.</p>';
+  if(!games.length) return listEl.innerHTML='<p class="small">No games found.</p>';
   const frag = document.createDocumentFragment();
   games.forEach((g, idx)=>{
     const el = document.createElement('div'); el.className='game';
-    const h = document.createElement('h3'); h.textContent = g.title || 'Untitled'; el.appendChild(h);
+    const h = document.createElement('h3'); h.textContent = (idx+1)+". " + (g.title || 'Untitled'); el.appendChild(h);
     const meta = document.createElement('div'); meta.className='small'; meta.textContent = (Array.isArray(g.cheats)?g.cheats.length:0)+' cheats'; el.appendChild(meta);
-    el.addEventListener('click', ()=>{ showPreview(g); });
+    el.addEventListener('click', ()=>{ selectGame(idx); });
     frag.appendChild(el);
   });
   listEl.innerHTML=''; listEl.appendChild(frag);
 }
 
-function showPreview(g){
-  const html = ['<h3>'+escapeHtml(g.title)+'</h3>'];
-  if(!g.cheats || !g.cheats.length){ html.push('<div class="small">No cheats</div>'); }
-  else{ html.push('<div class="small">Cheats: '+g.cheats.length+'</div>'); g.cheats.slice(0,50).forEach(c=>{ html.push('<strong>'+escapeHtml(c.name)+'</strong>'); if(c.codes && c.codes.length){ html.push('<pre>'+escapeHtml(c.codes.join('\n'))+'</pre>'); } }); }
-  preview.innerHTML = html.join('\n');
+function selectGame(index){
+  const g = parsedData[index]; if(!g) return; selectedIndex = index; showPreview(g, index);
 }
+
+function showPreview(g, idx){
+  const html = ['<h3>'+escapeHtml(g.title)+'</h3>'];
+  html.push('<div class="small">Game ID: '+(idx+1)+'</div>');
+  if(!g.cheats || !g.cheats.length){ html.push('<div class="small">No cheats found.</div>'); }
+  else{
+    html.push('<div class="small">Cheats: '+g.cheats.length+'</div>');
+    g.cheats.forEach((c,ci)=>{
+      html.push('<strong>'+escapeHtml(c.name||'Unnamed')+'</strong>');
+      if(c.codes && c.codes.length){ html.push('<pre>'+escapeHtml(c.codes.join('\n'))+'</pre>'); }
+    });
+  }
+  preview.innerHTML = html.join('\n');
+  renderActionsForGame(g, idx);
+}
+
 function escapeHtml(s){ return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
-let parsedData = null;
+let parsedData = null; let selectedIndex = null;
 
-async function start(){
-  try{
-    const txt = await fetchWithProgress(txtUrl);
-    parsedData = parseCheatTxt(txt);
-    status.textContent = 'Done';
-    renderList(parsedData);
-  }catch(err){ console.error(err); }
+function renderActionsForGame(g, idx){
+  actionsArea.innerHTML = '';
+  const btnDownload = document.createElement('button'); btnDownload.className='btn'; btnDownload.textContent='Download Cheat File (.cht)';
+  btnDownload.addEventListener('click', ()=>{ buildAndDownloadCheatFile(g); });
+
+  const btnUnlock = document.createElement('button'); btnUnlock.className='btn'; btnUnlock.textContent='Download Unlock-All (if exists)';
+  btnUnlock.addEventListener('click', ()=>{ buildAndDownloadUnlock(g); });
+
+  const sel = document.createElement('select'); sel.innerHTML = '<option value="all">All cheats</option>' + (g.cheats.map((c,i)=>'<option value="'+i+'">'+escapeHtml(c.name||('Cheat '+(i+1)))+'</option>').join(''));
+  const btnSel = document.createElement('button'); btnSel.className='btn'; btnSel.textContent='Download Selected';
+  btnSel.addEventListener('click', ()=>{ const v = sel.value; if(v==='all') buildAndDownloadCheatFile(g); else buildAndDownloadCheatFile(g, parseInt(v)); });
+
+  actionsArea.appendChild(btnDownload);
+  actionsArea.appendChild(btnUnlock);
+  actionsArea.appendChild(sel);
+  actionsArea.appendChild(btnSel);
 }
 
-searchInput.addEventListener('input', ()=>{
-  const q = searchInput.value.trim().toLowerCase(); if(!parsedData) return; if(!q){ renderList(parsedData); return; }
-  const filtered = parsedData.filter(g=> g.title && g.title.toLowerCase().includes(q) || (g.cheats && g.cheats.some(c=> (c.name||'').toLowerCase().includes(q))));
-  renderList(filtered);
+function buildCheatText(g, cheatIndex=null){
+  // Format: header with title, then cheat sections with codes. User asked for .cht-like file; we will output simple text where each code line is on its own line.
+  const lines = [];
+  lines.push('# Cheat file generated from CheatDatabase');
+  lines.push('# Game: ' + g.title);
+  lines.push('');
+  const cheats = (cheatIndex===null) ? g.cheats : [g.cheats[cheatIndex]];
+  cheats.forEach(c=>{
+    lines.push('['+ (c.name||'cheat') +']');
+    if(c.codes && c.codes.length){ c.codes.forEach(code=>lines.push(code)); }
+    lines.push('');
+  });
+  return lines.join('\n');
+}
+
+function buildAndDownloadCheatFile(g, cheatIndex=null){
+  const text = buildCheatText(g, cheatIndex);
+  const blob = new Blob([text], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = sanitizeFilename((g.title||'game') + (cheatIndex===null? '_all':'_cheat') + '.cht'); document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+
+function buildAndDownloadUnlock(g){
+  // Try to find cheats with 'unlock' or 'all' in name (case-insensitive)
+  const matches = (g.cheats||[]).filter(c=> /unlock|all/i.test(c.name || ''));
+  if(matches.length===0){
+    // If none, fall back to creating a file that contains all 'unlock-like' codes by heuristics: codes containing words 'unlock' not present; so ask to combine the most probable codes: we'll combine all cheats named 'Unlock' or include first cheat marked 'Enable Code' + anything that might be unlock
+    alert('No explicit "unlock" cheat found for this game. Creating a combined file containing ALL cheats instead.');
+    buildAndDownloadCheatFile(g, null);
+    return;
+  }
+  // build file with only these matches
+  const lines = [];
+  lines.push('# Unlock-All cheat(s) extracted');
+  lines.push('# Game: ' + g.title);
+  lines.push('');
+  matches.forEach(c=>{
+    lines.push('['+ (c.name||'unlock') +']');
+    if(c.codes && c.codes.length) c.codes.forEach(code=>lines.push(code));
+    lines.push('');
+  });
+  const blob = new Blob([lines.join('\n')], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = sanitizeFilename((g.title||'game') + '_unlock.cht'); document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+
+function sanitizeFilename(s){ return s.replace(/[^a-z0-9\-_. ]/gi,'_'); }
+
+// Lookup by input
+lookupBtn.addEventListener('click', ()=>{ const q = gameInput.value.trim(); if(!parsedData) return alert('Data not loaded yet'); if(!q) return alert('Paste game title or ID'); // if number -> index
+  const n = Number(q);
+  if(Number.isInteger(n) && n>=1 && n<=parsedData.length){ selectGame(n-1); listEl.scrollTop = Math.max(0,(n-2)*40); return; }
+  // search by exact or includes
+  const found = parsedData.findIndex(g=> (g.title||'').toLowerCase()===q.toLowerCase() || (g.title||'').toLowerCase().includes(q.toLowerCase()));
+  if(found>=0){ selectGame(found); return; }
+  alert('Game not found. Try a different title or paste exact ID number.');
 });
 
-exportBtn.addEventListener('click',(e)=>{
-  e.preventDefault(); if(!parsedData) return alert('No data to export'); const blob = new Blob([JSON.stringify(parsedData, null, 2)], {type:'application/json'}); const url = URL.createObjectURL(blob); exportBtn.href = url; exportBtn.download = 'CheatDatabase_from_txt.json'; exportBtn.click(); setTimeout(()=>URL.revokeObjectURL(url), 60000);
-});
-
-// Auto start
+// Auto load and parse
+async function start(){ try{ const txt = await fetchWithProgress(txtUrl); parsedData = parseCheatTxt(txt); status.textContent = 'Done'; renderList(parsedData); }catch(err){ console.error(err); } }
 window.addEventListener('load', ()=>{ start(); });
 </script>
 </body>
